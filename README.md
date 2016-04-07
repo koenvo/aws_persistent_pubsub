@@ -5,7 +5,7 @@ Persistent PubSub on AWS infrastructure.
 
 Create a listener
 ```python
-from aws_persisted_pubsub import PubSub
+from aws_persistent_pubsub import PubSub
 
 app = PubSub("SomeListener", region_name='eu-west-1')
 
@@ -28,7 +28,7 @@ while True:
 
 Create a source application
 ```python
-from aws_persisted_pubsub import PubSub
+from aws_persistent_pubsub import PubSub
 
 app = PubSub("#channel", region_name='eu-west-1')
 
