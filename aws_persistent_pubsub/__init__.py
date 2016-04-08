@@ -33,9 +33,11 @@ class PubSub(object):
         self._source_process_to_topic_arn_map = {}
         self._source_process_to_subscription_arn_map = {}
 
-        self._aws_kwargs = aws_kwargs
-        self._sqs_conn = None
-        self._sns_conn = None
+        self._sqs_conn = boto.sqs.connect_to_region(**aws_kwargs)
+        self._sns_conn = boto.sns.connect_to_region(**aws_kwargs)
+
+        # needed for sending messages
+        self._source_process_to_topic_arn_map = self._get_source_process_to_topic_arn_map()
 
     def _create_topic(self, process):
         topic = self._sns_conn.create_topic(process.replace(".", "_"))["CreateTopicResponse"]["CreateTopicResult"]
@@ -126,12 +128,8 @@ class PubSub(object):
 
     def register_aws_resources(self):
         """Should be called after all listen decorators."""
-        self._sqs_conn = boto.sqs.connect_to_region(**self._aws_kwargs)
-        self._sns_conn = boto.sns.connect_to_region(**self._aws_kwargs)
-
         self._process_queue = self._get_process_queue(self._process)
 
-        self._source_process_to_topic_arn_map = self._get_source_process_to_topic_arn_map()
         self._source_process_to_subscription_arn_map = self._get_source_process_to_subscription_arn_map(self._process)
 
         registered_source_processes = set(self._source_process_subscriptions.keys())
@@ -166,11 +164,16 @@ class PubSub(object):
             if source_process in self._source_process_subscriptions:
                 trigger_datetime = parse_utc_timestamp_to_local_datetime(body['Timestamp'])
                 _message = json.loads(body['Message'])
-                if _message['event'] in self._source_process_subscriptions[source_process]:
-                    for handler in self._source_process_subscriptions[source_process][_message['event']]:
+
+                event = _message['event']
+                if isinstance(event, list):
+                    event = tuple(event)
+
+                if event in self._source_process_subscriptions[source_process]:
+                    for handler in self._source_process_subscriptions[source_process][event]:
                         try:
                             self._handle_message(handler,
-                                                 event=_message['event'],
+                                                 event=event,
                                                  target=_message['target'],
                                                  source=_message.get('source'),
                                                  trigger_datetime=trigger_datetime)
