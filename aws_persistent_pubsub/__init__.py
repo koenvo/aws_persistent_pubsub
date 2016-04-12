@@ -99,10 +99,11 @@ class PubSub(object):
                 ret[source_process] = _subscription['SubscriptionArn']
         return ret
 
-    def _handle_message(self, handler, event, target, source, trigger_datetime):
+    def _handle_message(self, handler, event, target, source, extra, trigger_datetime):
         handler(event=event,
                 target=target,
                 source=source,
+                extra=extra,
                 trigger_datetime=trigger_datetime)
 
     def listen(self, source_process, events):
@@ -116,11 +117,12 @@ class PubSub(object):
             return fn
         return _wrapper
 
-    def emit(self, process, event, target):
+    def emit(self, process, event, target, extra=None):
         message = dict(
             event=event,
             target=target,
-            source=self._process
+            source=self._process,
+            extra=extra
         )
 
         # raise exception when noone is listening to a topic
@@ -175,7 +177,8 @@ class PubSub(object):
                             self._handle_message(handler,
                                                  event=event,
                                                  target=_message['target'],
-                                                 source=_message.get('source'),
+                                                 source=_message['source'],
+                                                 extra=_message['extra'],
                                                  trigger_datetime=trigger_datetime)
                         except Exception as exc:
                             logger.error(u"Handler '{}' raised an exception: '{}'".format(

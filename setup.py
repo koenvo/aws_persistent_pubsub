@@ -19,7 +19,7 @@ setup(
     description='Persistent PubSub on AWS infrastructure.',
     long_description=__doc__,
     classifiers=[],
-    install_requires=["boto>=2.36.0"],
+    install_requires=["boto>=2.36.0", "python-dateutil"],
     tests_require=[],
     extras_require={}
 )

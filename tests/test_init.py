@@ -69,7 +69,8 @@ class TestInit(TestCase):
 
         app.emit(process="Profile.Update",
                  event="Completed",
-                 target="user:1298")
+                 target="user:1298",
+                 extra=dict(a=1, b="test"))
 
         app.poll()
 
@@ -77,6 +78,7 @@ class TestInit(TestCase):
         assert kwargs["source"] == "SomeSource"
         assert kwargs["target"] == "user:1298"
         assert kwargs["event"] == "Completed"
+        assert kwargs["extra"] == dict(a=1, b="test")
 
     def test_listen(self):
         video_upload = MagicMock()
@@ -98,3 +100,4 @@ class TestInit(TestCase):
         assert kwargs["source"] == "StateMachine2"
         assert kwargs["target"] == "nice_kitten.png"
         assert kwargs["event"] == "Completed"
+        assert kwargs["extra"] is None
