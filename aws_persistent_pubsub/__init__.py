@@ -50,10 +50,32 @@ class PubSub(object):
         )["SubscribeResponse"]["SubscribeResult"]
         return subscription['SubscriptionArn']
 
+    @staticmethod
+    def _attach_wildcard_policy(queue):
+        policy = {
+            'Version': '2008-10-17',
+            'Statement': [{
+                'Sid': 'ReceiveMessageFromAllSNS',
+                'Effect': 'Allow',
+                'Principal': {
+                    'AWS': '*'
+                },
+                'Action': 'SQS:ReceiveMessage',
+                'Resource': queue.arn
+            }]
+        }
+        queue.set_attribute('Policy', json.dumps(policy))
+
+    def _create_queue(self, queue_name):
+        """Create a queue and attach policy to allow SNS messages from everywhere."""
+        process_queue = self._sqs_conn.create_queue(queue_name)
+        self._attach_wildcard_policy(process_queue)
+        return process_queue
+
     def _get_process_queue(self, process):
         process_queue = self._sqs_conn.get_queue(process)
         if process_queue is None:
-            process_queue = self._sqs_conn.create_queue(process)
+            process_queue = self._create_queue(process)
 
         process_queue.set_message_class(boto.sqs.message.RawMessage)
         return process_queue
