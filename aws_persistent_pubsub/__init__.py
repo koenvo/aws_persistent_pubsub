@@ -72,7 +72,7 @@ class PubSub(object):
         """Create subscription to SNS. Don't use subscribe_sqs_queue because this function will attach
            a policy, but we set a wider policy on the queue in _create_queue. """
         subscription = self._sns_conn.subscribe(
-            self._source_process_to_topic_arn_map[process].arn, 'sqs', queue.arn
+            self._source_process_to_topic_arn_map[process], 'sqs', queue.arn
         )["SubscribeResponse"]["SubscribeResult"]
         return subscription['SubscriptionArn']
 
@@ -101,21 +101,36 @@ class PubSub(object):
                 break
         return {arn_to_process(topic['TopicArn']): topic['TopicArn'] for topic in _topics}
 
-    def _get_source_process_to_subscription_arn_map(self, process):
-        """Return all subscriptions that send data to `process`."""
+
+    def _get_topic_subscriptions(self, topic_arn):
         _subscriptions = []
 
         next_token = None
         while True:
-            response = self._sns_conn.get_all_subscriptions(
+            response = self._sns_conn.get_all_subscriptions_by_topic(
+                topic=topic_arn,
                 next_token=next_token
-            )["ListSubscriptionsResponse"]["ListSubscriptionsResult"]
+            )["ListSubscriptionsByTopicResponse"]["ListSubscriptionsByTopicResult"]
 
             _subscriptions.extend(response['Subscriptions'])
 
             next_token = response["NextToken"]
             if next_token is None:
                 break
+
+        return _subscriptions
+
+    def _get_source_process_to_subscription_arn_map(self, process):
+        """Return all subscriptions that send data to `process`.
+           Have to retrieve the subscriptions on topic base: https://forums.aws.amazon.com/thread.jspa?threadID=219168
+        """
+        _subscriptions = []
+
+        for topic_arn in self._source_process_to_topic_arn_map.values():
+            _subscriptions.extend(self._get_topic_subscriptions(topic_arn))
+
+        # unsubscribe all
+        # map(self._sns_conn.unsubscribe, [sub['SubscriptionArn'] for sub in _subscriptions])
 
         # in a loop for readability
         ret = {}
