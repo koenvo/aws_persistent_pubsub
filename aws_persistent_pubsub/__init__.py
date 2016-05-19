@@ -39,28 +39,20 @@ class PubSub(object):
         # needed for sending messages
         self._source_process_to_topic_arn_map = self._get_source_process_to_topic_arn_map()
 
-    def _create_topic(self, process):
-        topic = self._sns_conn.create_topic(process.replace(".", "_"))["CreateTopicResponse"]["CreateTopicResult"]
-        return topic['TopicArn']
-
-    def _create_subscription(self, process, queue):
-        subscription = self._sns_conn.subscribe_sqs_queue(
-            self._source_process_to_topic_arn_map[process],
-            queue
-        )["SubscribeResponse"]["SubscribeResult"]
-        return subscription['SubscriptionArn']
-
     @staticmethod
     def _attach_wildcard_policy(queue):
+        sid = "ReceiveMessagesFromAllTopics-{}".format(
+            queue.arn.split(":")[-1]
+        )
         policy = {
             'Version': '2008-10-17',
             'Statement': [{
-                'Sid': 'ReceiveMessageFromAllSNS',
+                'Sid': sid,
                 'Effect': 'Allow',
                 'Principal': {
                     'AWS': '*'
                 },
-                'Action': 'SQS:ReceiveMessage',
+                'Action': 'SQS:SendMessage',
                 'Resource': queue.arn
             }]
         }
@@ -71,6 +63,19 @@ class PubSub(object):
         process_queue = self._sqs_conn.create_queue(queue_name)
         self._attach_wildcard_policy(process_queue)
         return process_queue
+
+    def _create_topic(self, process):
+        topic = self._sns_conn.create_topic(process.replace(".", "_"))["CreateTopicResponse"]["CreateTopicResult"]
+        return topic['TopicArn']
+
+    def _create_subscription(self, process, queue):
+        """Create subscription to SNS. Don't use subscribe_sqs_queue because this function will attach
+           a policy, but we set a wider policy on the queue in _create_queue. """
+        subscription = self._sns_conn.subscribe(
+            self._source_process_to_topic_arn_map[process], 'sqs', queue
+        )["SubscribeResponse"]["SubscribeResult"]
+        return subscription['SubscriptionArn']
+
 
     def _get_process_queue(self, process):
         process_queue = self._sqs_conn.get_queue(process)
