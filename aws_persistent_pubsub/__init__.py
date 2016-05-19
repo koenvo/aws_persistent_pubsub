@@ -72,7 +72,7 @@ class PubSub(object):
         """Create subscription to SNS. Don't use subscribe_sqs_queue because this function will attach
            a policy, but we set a wider policy on the queue in _create_queue. """
         subscription = self._sns_conn.subscribe(
-            self._source_process_to_topic_arn_map[process], 'sqs', queue
+            self._source_process_to_topic_arn_map[process].arn, 'sqs', queue.arn
         )["SubscribeResponse"]["SubscribeResult"]
         return subscription['SubscriptionArn']
 
