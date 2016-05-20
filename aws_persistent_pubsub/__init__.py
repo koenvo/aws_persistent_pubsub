@@ -27,6 +27,9 @@ class PubSub(object):
         self._ack_on_exception = ack_on_exception
         self._namespace = namespace
 
+        if self._namespace is None:
+            raise Exception("Namespace cannot be None")
+
         # create own process queue when missing
         self._process = process
         self._process_queue = None
@@ -43,7 +46,11 @@ class PubSub(object):
         self._refresh_source_process_to_topic_arn_map()
 
     def _arn_to_process(self, arn):
-        namespace, process = arn.split(":")[-1].split("__")
+        try:
+            namespace, process = arn.split(":")[-1].split("__")
+        except ValueError:
+            namespace = None
+
         if namespace != self._namespace:
             raise WrongNamespace("Arn '{}' does not belong to namespace '{}'".format(
                 arn, namespace
