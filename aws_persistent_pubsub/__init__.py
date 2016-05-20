@@ -53,7 +53,7 @@ class PubSub(object):
 
         if namespace != self._namespace:
             raise WrongNamespace("Arn '{}' does not belong to namespace '{}'".format(
-                arn, namespace
+                arn, self._namespace
             ))
         return process.replace("_", ".")
 
@@ -95,7 +95,7 @@ class PubSub(object):
 
     def _create_queue(self, queue_name):
         """Create a queue and attach policy to allow SNS messages from everywhere."""
-        process_queue = self._sqs_conn.create_queue(self._process_to_arn_friendly_name(queue_name))
+        process_queue = self._sqs_conn.create_queue(queue_name)
         self._attach_wildcard_policy(process_queue)
         return process_queue
 
@@ -113,9 +113,10 @@ class PubSub(object):
 
 
     def _get_process_queue(self, process):
-        process_queue = self._sqs_conn.get_queue(process)
+        queue_name = self._process_to_arn_friendly_name(process)
+        process_queue = self._sqs_conn.get_queue(queue_name)
         if process_queue is None:
-            process_queue = self._create_queue(process)
+            process_queue = self._create_queue(queue_name)
 
         process_queue.set_message_class(boto.sqs.message.RawMessage)
         return process_queue
