@@ -12,6 +12,8 @@ import json
 
 logger = logging.getLogger(__package__)
 
+class WrongNamespace(Exception):
+    pass
 
 def parse_utc_timestamp_to_local_datetime(string):
     utc = datetime.datetime.strptime(string, "%Y-%m-%dT%H:%M:%S.%fZ")
@@ -20,12 +22,11 @@ def parse_utc_timestamp_to_local_datetime(string):
     return utc.astimezone(tz.tzlocal())
 
 
-def arn_to_process(arn):
-    return arn.split(":")[-1].replace("_", ".")
-
-
 class PubSub(object):
-    def __init__(self, process, **aws_kwargs):
+    def __init__(self, namespace, process, ack_on_exception=False, **aws_kwargs):
+        self._ack_on_exception = ack_on_exception
+        self._namespace = namespace
+
         # create own process queue when missing
         self._process = process
         self._process_queue = None
@@ -37,7 +38,31 @@ class PubSub(object):
         self._sns_conn = boto.sns.connect_to_region(**aws_kwargs)
 
         # needed for sending messages
-        self._source_process_to_topic_arn_map = self._get_source_process_to_topic_arn_map()
+        self._source_process_to_topic_arn_map = None
+
+        self._refresh_source_process_to_topic_arn_map()
+
+    def _arn_to_process(self, arn):
+        namespace, process = arn.split(":")[-1].split("__")
+        if namespace != self._namespace:
+            raise WrongNamespace("Arn '{}' does not belong to namespace '{}'".format(
+                arn, namespace
+            ))
+        return process.replace("_", ".")
+
+    def _belongs_to_namespace(self, arn):
+        try:
+            self._arn_to_process(arn)
+        except WrongNamespace:
+            return False
+        else:
+            return True
+
+    def _process_to_arn_friendly_name(self, process):
+        """Add namespace and replace dot with underscore."""
+        return "{namespace}__{process}".format(
+            namespace=self._namespace, process=process.replace(".", "_")
+        )
 
     @staticmethod
     def _attach_wildcard_policy(queue):
@@ -58,14 +83,17 @@ class PubSub(object):
         }
         queue.set_attribute('Policy', json.dumps(policy))
 
+    def _refresh_source_process_to_topic_arn_map(self):
+        self._source_process_to_topic_arn_map = self._get_source_process_to_topic_arn_map()
+
     def _create_queue(self, queue_name):
         """Create a queue and attach policy to allow SNS messages from everywhere."""
-        process_queue = self._sqs_conn.create_queue(queue_name)
+        process_queue = self._sqs_conn.create_queue(self._process_to_arn_friendly_name(queue_name))
         self._attach_wildcard_policy(process_queue)
         return process_queue
 
     def _create_topic(self, process):
-        topic = self._sns_conn.create_topic(process.replace(".", "_"))["CreateTopicResponse"]["CreateTopicResult"]
+        topic = self._sns_conn.create_topic(self._process_to_arn_friendly_name(process))["CreateTopicResponse"]["CreateTopicResult"]
         return topic['TopicArn']
 
     def _create_subscription(self, process, queue):
@@ -94,13 +122,13 @@ class PubSub(object):
                 next_token=next_token
             )["ListTopicsResponse"]["ListTopicsResult"]
 
-            _topics.extend(response['Topics'])
+            _topics.extend([topic for topic in response['Topics']
+                            if self._belongs_to_namespace(topic['TopicArn'])])
 
             next_token = response['NextToken']
             if next_token is None:
                 break
-        return {arn_to_process(topic['TopicArn']): topic['TopicArn'] for topic in _topics}
-
+        return {self._arn_to_process(topic['TopicArn']): topic['TopicArn'] for topic in _topics}
 
     def _get_topic_subscriptions(self, topic_arn):
         _subscriptions = []
@@ -135,9 +163,9 @@ class PubSub(object):
         # in a loop for readability
         ret = {}
         for _subscription in _subscriptions:
-            target_process = arn_to_process(_subscription['Endpoint'])
+            target_process = self._arn_to_process(_subscription['Endpoint'])
             if target_process == process:
-                source_process = arn_to_process(_subscription['TopicArn'])
+                source_process = self._arn_to_process(_subscription['TopicArn'])
                 ret[source_process] = _subscription['SubscriptionArn']
         return ret
 
@@ -168,6 +196,11 @@ class PubSub(object):
         )
 
         # raise exception when noone is listening to a topic
+        if process not in self._source_process_to_topic_arn_map:
+            self._refresh_source_process_to_topic_arn_map()
+            if process not in self._source_process_to_topic_arn_map:
+                raise Exception("No one is listening for '{}'".format(process))
+
         self._sns_conn.publish(topic=self._source_process_to_topic_arn_map[process], message=json.dumps(message))
 
     def register_aws_resources(self):
@@ -203,8 +236,9 @@ class PubSub(object):
         logger.debug("Got {} messages".format(len(messages)))
         for message in messages:
             body = json.loads(message.get_body())
-            source_process = arn_to_process(body['TopicArn'])
+            source_process = self._arn_to_process(body['TopicArn'])
 
+            exception_raised = False
             if source_process in self._source_process_subscriptions:
                 trigger_datetime = parse_utc_timestamp_to_local_datetime(body['Timestamp'])
                 _message = json.loads(body['Message'])
@@ -226,10 +260,12 @@ class PubSub(object):
                             logger.error(u"Handler '{}' raised an exception: '{}'".format(
                                 handler, exc
                             ))
+                            exception_raised = True
                 else:
                     logger.debug(u"Dropped message '{}'. Event not wanted.".format(body))
 
             else:
                 logger.warning(u"Dropped message '{}'. Didn't ask for it.".format(body))
 
-            message.delete()
+            if self._ack_on_exception or not exception_raised:
+                message.delete()

@@ -61,7 +61,7 @@ class TestInit(TestCase):
     def test_init(self):
         video_upload = MagicMock()
 
-        app = PubSub("SomeSource", region_name="eu-west-1")
+        app = PubSub("test", "SomeSource", region_name="eu-west-1")
         # decorate video_upload
         app.listen("Profile.Update", ["Completed"])(video_upload)
 
@@ -83,11 +83,11 @@ class TestInit(TestCase):
     def test_listen(self):
         video_upload = MagicMock()
 
-        app1 = PubSub("StateMachine1", region_name="eu-west-1")
+        app1 = PubSub("test", "StateMachine1", region_name="eu-west-1")
         app1.listen("Image.Upload", ["Completed"])(video_upload)
         app1.register_aws_resources()
 
-        app2 = PubSub("StateMachine2", region_name="eu-west-1")
+        app2 = PubSub("test", "StateMachine2", region_name="eu-west-1")
         app2.register_aws_resources()
 
         app2.emit(process="Image.Upload",
