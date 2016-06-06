@@ -1,3 +1,5 @@
+import traceback
+
 __author__ = 'koen'
 
 import logging
@@ -265,8 +267,8 @@ class PubSub(object):
                                                  extra=_message['extra'],
                                                  trigger_datetime=trigger_datetime)
                         except Exception as exc:
-                            logger.error(u"Handler '{}' raised an exception: '{}'".format(
-                                handler, exc
+                            logger.error(u"Handler '{}' raised an exception: '{}'. Traceback: {}".format(
+                                handler, exc, traceback.format_exc()
                             ))
                             exception_raised = True
                 else:
